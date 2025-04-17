@@ -9,8 +9,8 @@
 #include "DHT.h"
 #define TIME_ZONE -4
  
-#define DHTPIN D5        // Digital pin connected to the DHT sensor
-#define DHTTYPE DHT22   // DHT 11
+#define DHTPIN D5       
+#define DHTTYPE DHT22  
  
 DHT dht(DHTPIN, DHTTYPE);
 Adafruit_SHT4x sht4 = Adafruit_SHT4x();
@@ -19,7 +19,7 @@ float h ;
 float t;
 String sensor_id = "Sensor1" ;
 sensors_event_t humidityInt, tempInt;
-String fecha; // String to hold the current date and time
+String fecha; 
 unsigned long lastMillis = 0;
 unsigned long previousMillis = 0;
 const long interval = 5000;
@@ -57,7 +57,7 @@ void updateFecha() {
  
 void NTPConnect(void)
 {
-  Serial.print("Setting time using SNTP");
+  Serial.print("Configurando tiempo por SNTP");
   configTime(TIME_ZONE * 3600, 0 * 3600, "pool.ntp.org", "time.nist.gov");
   now = time(nullptr);
   while (now < nowish)
@@ -66,7 +66,7 @@ void NTPConnect(void)
     Serial.print(".");
     now = time(nullptr);
   }
-  Serial.println("done!");
+  Serial.println("Terminado");
   struct tm timeinfo;
   gmtime_r(&now, &timeinfo);
   char timeStr[20];
@@ -79,7 +79,7 @@ void NTPConnect(void)
  
 void messageReceived(char *topic, byte *payload, unsigned int length)
 {
-  Serial.print("Received [");
+  Serial.print("Recibido [");
   Serial.print(topic);
   Serial.print("]: ");
   for (int i = 0; i < length; i++)
@@ -96,7 +96,7 @@ void connectAWS()
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
  
-  Serial.println(String("Attempting to connect to SSID: ") + String(WIFI_SSID));
+  Serial.println(String("Intentando conectar al SSID: ") + String(WIFI_SSID));
  
   while (WiFi.status() != WL_CONNECTED)
   {
@@ -113,7 +113,7 @@ void connectAWS()
   client.setCallback(messageReceived);
  
  
-  Serial.println("Connecting to AWS IOT");
+  Serial.println("Conectando a AWS IOT");
  
   while (!client.connect(THINGNAME))
   {
@@ -125,10 +125,9 @@ void connectAWS()
     Serial.println("AWS IoT Timeout!");
     return;
   }
-  // Subscribe to a topic
   client.subscribe(AWS_IOT_SUBSCRIBE_TOPIC);
  
-  Serial.println("AWS IoT Connected!");
+  Serial.println("AWS IoT Conectado");
 }
  
  
@@ -137,7 +136,7 @@ void publishMessage()
   updateFecha();
   StaticJsonDocument<300> doc;
   doc["sensorId"] = sensor_id;
-  doc["fechaHora"] = fecha;  // Include the formatted date and time
+  doc["fechaHora"] = fecha;  
   doc["humExt"] = h;
   doc["tempExt"] = t;
   doc["humInt"] = humidityInt.relative_humidity;
@@ -146,7 +145,7 @@ void publishMessage()
   doc["lng"] = -71.227288;
 
   char jsonBuffer[512];
-  serializeJson(doc, jsonBuffer); // print to client
+  serializeJson(doc, jsonBuffer); 
  
   if(client.publish(AWS_IOT_PUBLISH_TOPIC, jsonBuffer)){    
     Serial.print("Humedad Ext: ");
@@ -175,7 +174,7 @@ void setup()
   dht.begin(); 
   Wire.begin();
   if(!sht4.begin()){
-    Serial.println("No se encontro el sensor SHT41");
+    Serial.println("Error de lectura en el SHT41");
     while(1) delay(1);
   }  
   Serial.println("Sensor SHT41 encontrado");
@@ -190,9 +189,9 @@ void loop()
   t = dht.readTemperature();
  
   sht4.getEvent(&humidityInt, &tempInt);
-  if (isnan(h) || isnan(t) )  // Check if any reads failed and exit early (to try again).
+  if (isnan(h) || isnan(t) )  
   {
-    Serial.println(F("Failed to read from DHT sensor!"));
+    Serial.println(F("Error de lectura en el DHT22"));
     return;
   }
  

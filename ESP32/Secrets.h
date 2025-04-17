@@ -2,8 +2,8 @@
  
 #define SECRET
  
-const char WIFI_SSID[] = "Farias";               //TAMIM2.4G
-const char WIFI_PASSWORD[] = "ssbb1997!";           //0544287380
+const char WIFI_SSID[] = "Farias";              
+const char WIFI_PASSWORD[] = "ssbb1997!";          
  
 #define THINGNAME "sensor_colmena_01"
  
