@@ -1,353 +1,403 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:flutter/foundation.dart'; // Para debugPrint
-import 'package:data_table_2/data_table_2.dart'; // Importar data_table_2
-
-// Models - Asegúrate que las rutas sean correctas para tu proyecto
+import 'package:data_table_2/data_table_2.dart'; 
 import 'package:app_abejas/models/sensor.dart';
 import 'package:app_abejas/models/sensor_data.dart';
-
-// Services and Config - Asegúrate que las rutas sean correctas para tu proyecto
 import 'package:app_abejas/services/api_service.dart';
 import 'package:app_abejas/services/api_config.dart';
-
-// Screens - Asegúrate que la ruta sea correcta para tu proyecto
 import 'package:app_abejas/screens/map_screen.dart';
+import 'package:intl/intl.dart'; // Added for date formatting
 
 
-// --- Widget Principal de la Pantalla de Inicio ---
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key}); // Constructor estándar para StatefulWidget
+  const HomeScreen({super.key}); 
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState(); // Crea el estado mutable
+  State<HomeScreen> createState() => _HomeScreenState(); 
 }
-
-// --- Estado Mutable de la Pantalla de Inicio ---
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
-  // --- Variables de Estado ---
 
-  // Controladores
-  GoogleMapController? mapController; // Controlador para interactuar con el mapa (puede ser nulo inicialmente)
-  late TabController _tabController; // Controlador para manejar las pestañas (Tabs)
+  GoogleMapController? mapController; 
+  late TabController _tabController; 
+  late ApiService _apiService; 
+  List<Sensor> _listaDeSensoresUnicos = []; 
+  bool _isLoadingSensores = true; 
+  String? _errorLoadingSensores; 
+  Sensor? _sensorSeleccionado; 
+  List<SensorData> _datosDelSensorSeleccionado = []; 
+  bool _isLoadingChartData = false; 
+  String? _errorLoadingChartData; 
 
-  // Servicio API
-  late ApiService _apiService; // Instancia del servicio para hacer llamadas a la API
-
-  // Estado de la lista de sensores
-  List<Sensor> _listaDeSensoresUnicos = []; // Lista para guardar los sensores únicos obtenidos de la API
-  bool _isLoadingSensores = true; // Bandera para indicar si la lista de sensores se está cargando
-  String? _errorLoadingSensores; // Variable para almacenar mensajes de error al cargar la lista de sensores
-
-  // Estado del sensor seleccionado y sus datos
-  Sensor? _sensorSeleccionado; // El sensor actualmente elegido en el Dropdown
-  List<SensorData> _datosDelSensorSeleccionado = []; // Lista para guardar los datos (temp/hum) del sensor seleccionado
-  bool _isLoadingChartData = false; // Bandera para indicar si se están cargando los datos para gráficos/tabla
-  String? _errorLoadingChartData; // Variable para almacenar mensajes de error al cargar los datos del sensor
-
-
-  // --- Método initState: Se ejecuta una vez cuando se crea el estado ---
   @override
   void initState() {
     super.initState();
-    // Inicializa el TabController con 2 pestañas (Temperaturas, Humedades)
-    _tabController = TabController(length: 2, vsync: this); // 'vsync: this' requiere SingleTickerProviderStateMixin
-
-    // --- Inicializa ApiService ---
-    // Extrae la URL base de la configuración. Es CRÍTICO que sea la URL base correcta.
+    _tabController = TabController(length: 2, vsync: this); 
     final uri = Uri.parse(ApiConfig.apiUrl);
     final baseUrl = "${uri.scheme}://${uri.host}${uri.path.replaceAll('/datalist', '')}";
-
-    _apiService = ApiService(baseUrl: baseUrl); // Crea la instancia del servicio con la URL base
-    // --- Fin Inicialización ApiService ---
-
-    // Llama a la función para obtener la lista inicial de sensores al iniciar la pantalla
+    _apiService = ApiService(baseUrl: baseUrl); 
     _fetchUniqueSensorList();
   }
 
-  // --- Método dispose: Se ejecuta cuando el estado se destruye ---
   @override
   void dispose() {
-    // Libera los recursos de los controladores para evitar fugas de memoria
     _tabController.dispose();
-    mapController?.dispose(); // Llama a dispose() solo si mapController no es nulo
+    mapController?.dispose(); 
     super.dispose();
   }
 
-
-  // --- Obtiene la lista de sensores ÚNICOS desde la API (/datalist) ---
   Future<void> _fetchUniqueSensorList() async {
-    // Actualiza el estado para indicar carga y limpiar datos/errores previos
     setState(() {
       _isLoadingSensores = true;
       _errorLoadingSensores = null;
-      _listaDeSensoresUnicos = []; // Limpia lista anterior
-      _sensorSeleccionado = null; // Deselecciona cualquier sensor previo
-      _datosDelSensorSeleccionado = []; // Limpia datos de gráficos/tabla
+      _listaDeSensoresUnicos = []; 
+      _sensorSeleccionado = null; 
+      _datosDelSensorSeleccionado = []; 
     });
 
     try {
-      // Llama al método del servicio API que obtiene los sensores únicos
       final uniqueSensors = await _apiService.fetchUniqueSensors();
-      // Actualiza el estado con la lista de sensores obtenida
       setState(() {
         _listaDeSensoresUnicos = uniqueSensors;
-        _isLoadingSensores = false; // Termina la carga
+        _isLoadingSensores = false; 
       });
     } catch (e) {
-      // Si ocurre un error durante la llamada o procesamiento
-      debugPrint('Error fetching unique sensor list: $e'); // Imprime el error en consola de debug
-      // Actualiza el estado para mostrar el mensaje de error al usuario
+      debugPrint('Error fetching unique sensor list: $e');
       setState(() {
         _errorLoadingSensores = 'Error al obtener lista de sensores: ${e.toString()}';
-        _isLoadingSensores = false; // Termina la carga (con error)
+        _isLoadingSensores = false;
       });
     }
   }
 
-  // --- Obtiene los datos de SERIE TEMPORAL para un sensor específico ---
-  // Llama a la API (/datalist?sensorId=...)
   Future<void> _fetchChartData(String sensorId) async {
-     // Comprobación para evitar llamadas duplicadas si el sensor no ha cambiado
      if (_sensorSeleccionado == null || _sensorSeleccionado!.nombre != sensorId) {
         return;
      }
-    // Actualiza el estado para indicar carga de datos de gráficos/tabla
     setState(() {
       _isLoadingChartData = true;
-      _errorLoadingChartData = null; // Limpia error previo
-      _datosDelSensorSeleccionado = []; // Limpia datos previos
+      _errorLoadingChartData = null;
+      _datosDelSensorSeleccionado = [];
     });
 
     try {
-      // Llama al método del servicio API que obtiene los datos por ID
       final sensorData = await _apiService.fetchDataBySensorId(sensorId);
-      // Actualiza el estado con los datos de serie temporal obtenidos
       setState(() {
         _datosDelSensorSeleccionado = sensorData;
-        _isLoadingChartData = false; // Termina la carga de datos
+        _isLoadingChartData = false;
       });
     } catch (e) {
-      // Si ocurre un error
-      debugPrint('Error fetching chart data for $sensorId: $e'); // Imprime error en debug
-      // Actualiza el estado para mostrar el error en la UI (en el área de gráficos/tabla)
+      debugPrint('Error fetching chart data for $sensorId: $e');
       setState(() {
         _errorLoadingChartData = 'Error al cargar datos de $sensorId: ${e.toString()}';
-        _isLoadingChartData = false; // Termina la carga (con error)
+        _isLoadingChartData = false;
       });
     }
   }
 
-  // --- Maneja el cambio de selección en el Dropdown de sensores ---
   void _handleSensorSelection(Sensor? sensor) {
-     // Si no se selecciona nada (null) o se vuelve a seleccionar el mismo, no hacer nada
      if (sensor == null || sensor == _sensorSeleccionado) return;
-
-    // Actualiza el estado: guarda el nuevo sensor, limpia datos, activa carga
     setState(() {
       _sensorSeleccionado = sensor;
-      _datosDelSensorSeleccionado = []; // Limpia datos anteriores inmediatamente
-      _isLoadingChartData = true; // Muestra indicador de carga para gráficos/tabla
-      _errorLoadingChartData = null; // Limpia errores anteriores
+      _datosDelSensorSeleccionado = [];
+      _isLoadingChartData = true;
+      _errorLoadingChartData = null;
     });
-
-    // Anima la cámara del mapa para centrarse en la ubicación del sensor seleccionado
     mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(sensor.ubicacion, 18), // Zoom 18 (puedes ajustarlo)
+      CameraUpdate.newLatLngZoom(sensor.ubicacion, 18),
     );
-
-    // Llama a la función para obtener los datos (temperatura, humedad) de este sensor
-    _fetchChartData(sensor.nombre); // Usa el nombre del sensor como ID para la API
+    _fetchChartData(sensor.nombre);
   }
 
-
-  // --- Construye el conjunto (Set) de marcadores para mostrar en el mapa ---
   Set<Marker> get _crearMarcadores {
-    // Mapea cada objeto Sensor en la lista de únicos a un objeto Marker
     return _listaDeSensoresUnicos.map((sensor) {
       return Marker(
-        markerId: MarkerId(sensor.nombre), // ID único basado en el nombre/ID del sensor
-        position: sensor.ubicacion, // Coordenadas LatLng del sensor
-        infoWindow: InfoWindow( // Información que aparece al tocar el marcador
+        markerId: MarkerId(sensor.nombre),
+        position: sensor.ubicacion,
+        infoWindow: InfoWindow( 
             title: sensor.nombre,
         ),
-        // Asigna un color al icono del marcador basado en el nombre del sensor
         icon: BitmapDescriptor.defaultMarkerWithHue(_colorToHue(sensor.color)),
-        // Acción al tocar el marcador en el mapa
+        
         onTap: () {
-            // Llama a la función que maneja la selección del sensor
             _handleSensorSelection(sensor);
         },
       );
-    }).toSet(); // Convierte el resultado del map (Iterable) en un Set<Marker>
+    }).toSet();
   }
 
-  // --- Convierte un Color Flutter a un valor Hue (0-360) para Google Maps ---
   double _colorToHue(Color color) {
-    // Usa la clase HSLColor para convertir RGB a HSL (Hue, Saturation, Lightness)
     final hslColor = HSLColor.fromColor(color);
-    // Devuelve el componente Hue
     return hslColor.hue;
   }
 
-
-  // --- Construye el widget del gráfico de líneas combinado ---
    Widget _buildCombinedChart({
-    required String title, // Título principal del gráfico
-    required List<SensorData> timeSeriesData, // Lista de datos (objetos SensorData)
-    required String label1, // Etiqueta para la leyenda de la línea 1
-    required double Function(SensorData) getValue1, // Función para obtener el valor Y de la línea 1
-    required Color color1, // Color de la línea 1
-    required String label2, // Etiqueta para la leyenda de la línea 2
-    required double Function(SensorData) getValue2, // Función para obtener el valor Y de la línea 2
-    required Color color2, // Color de la línea 2
-  }) {
-    // Mapea los SensorData a puntos FlSpot (X, Y) para la librería fl_chart
-    final List<FlSpot> spots1 = timeSeriesData.asMap().entries.map((entry) {
-        return FlSpot(entry.key.toDouble(), getValue1(entry.value));
-    }).toList();
-    final List<FlSpot> spots2 = timeSeriesData.asMap().entries.map((entry) {
-      return FlSpot(entry.key.toDouble(), getValue2(entry.value));
-    }).toList();
+    required String title, 
+    required List<SensorData> timeSeriesData, 
+    required String label1, 
+    required double Function(SensorData) getValue1,
+    required Color color1, 
+    required String label2, 
+    required double Function(SensorData) getValue2, 
+    required Color color2, 
+    // Parámetros para umbrales
+    double? thresholdHighValue,
+    Color? thresholdHighColor,
+    String? thresholdHighLabel,
+    double? thresholdLowValue,
+    Color? thresholdLowColor,
+    String? thresholdLowLabel,
+  }) {    
+    // Manejar estados de carga, error o datos vacíos primero.
+    if (_isLoadingChartData) {
+      return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
+    }
+    if (_errorLoadingChartData != null) {
+      return SizedBox(height: 200, child: Center(child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Text(_errorLoadingChartData!, textAlign: TextAlign.center),
+      )));
+    }
+    if (timeSeriesData.isEmpty) {
+      return const SizedBox(height: 200, child: Center(child: Text('No hay datos disponibles para graficar.')));
+    }
 
-    // Calcula el valor máximo para el eje X basado en la cantidad de datos
-    final double maxX = timeSeriesData.isNotEmpty ? (timeSeriesData.length - 1).toDouble() : 0;
-    // Define un ancho mínimo por punto de dato para calcular el ancho total del gráfico
-    const double minWidthPerDataPoint = 10.0; // Ajusta este valor según sea necesario
-    // Calcula el ancho necesario para el gráfico. Si es menor que el ancho de la pantalla (menos márgenes), usa el ancho de la pantalla.
-    final double chartWidth = maxX * minWidthPerDataPoint < MediaQuery.of(context).size.width - 50
+    List<MapEntry<DateTime, SensorData>> processedData = [];
+    try {
+      processedData = timeSeriesData.map((data) {
+        // Usar DateFormat para parsear el formato "dd/MM/yyyy HH:mm:ss"
+        final dateFormat = DateFormat("dd/MM/yyyy HH:mm:ss");
+        return MapEntry(dateFormat.parse(data.timestamp), data);
+      }).toList();
+      // Ordenar los datos por fecha/hora es crucial para la correcta visualización del gráfico.
+      processedData.sort((a, b) => a.key.compareTo(b.key));
+    } catch (e) {
+      debugPrint('Error parsing timestamps for chart: $e');
+      return SizedBox(
+        height: 200, // Altura consistente con otros estados
+        child: Center(child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Text('Error al procesar fechas para el gráfico. Verifique el formato de los datos.\nDetalle: ${e.toString()}', textAlign: TextAlign.center),
+        )),
+      );
+    }
+
+    if (processedData.isEmpty) { // Salvaguarda adicional
+        return const SizedBox(height: 200, child: Center(child: Text('No hay datos procesados para graficar.')));
+    }
+
+    final double minXEpoch = processedData.first.key.millisecondsSinceEpoch.toDouble();
+    final double maxXEpoch = processedData.last.key.millisecondsSinceEpoch.toDouble();
+
+    bool allSameDay = true;
+    final firstDateTime = processedData.first.key;
+    for (final entry in processedData) {
+      if (entry.key.year != firstDateTime.year ||
+          entry.key.month != firstDateTime.month ||
+          entry.key.day != firstDateTime.day) {
+        allSameDay = false;
+        break;
+      }
+    }
+
+    final List<FlSpot> spots1 = processedData.map((entry) => FlSpot(entry.key.millisecondsSinceEpoch.toDouble(), getValue1(entry.value))).toList();
+    final List<FlSpot> spots2 = processedData.map((entry) => FlSpot(entry.key.millisecondsSinceEpoch.toDouble(), getValue2(entry.value))).toList();
+
+    // Determinar minY y maxY basados en los datos y los umbrales
+    double minY = double.infinity;
+    double maxY = double.negativeInfinity;
+
+    for (var spot in spots1) {
+      if (spot.y < minY) minY = spot.y;
+      if (spot.y > maxY) maxY = spot.y;
+    }
+    for (var spot in spots2) {
+      if (spot.y < minY) minY = spot.y;
+      if (spot.y > maxY) maxY = spot.y;
+    }
+
+    if (thresholdLowValue != null) {
+      minY = minY < thresholdLowValue ? minY : thresholdLowValue;
+    }
+    if (thresholdHighValue != null) {
+      maxY = maxY > thresholdHighValue ? maxY : thresholdHighValue;
+    }
+
+    // Añadir padding si minY y maxY no son infinitos (es decir, hay datos)
+    if (minY != double.infinity && maxY != double.negativeInfinity) {
+      final range = maxY - minY;
+      minY -= range * 0.1; // 10% padding abajo
+      maxY += range * 0.1; // 10% padding arriba
+      if (minY == maxY) { // Caso de un solo valor o todos los valores iguales
+        minY -= 1; // Evitar que minY y maxY sean iguales
+        maxY += 1;
+      }
+    } else {
+      // Si no hay datos, o los umbrales son los únicos puntos de referencia
+      minY = thresholdLowValue ?? 0;
+      maxY = thresholdHighValue ?? 10; // Valores por defecto si no hay nada más
+      if (minY >= maxY) maxY = minY + 10; // Asegurar que maxY > minY
+    }
+
+    const double minWidthPerDataPoint = 10.0; 
+    final double chartWidth = processedData.length * minWidthPerDataPoint < MediaQuery.of(context).size.width - 50
         ? MediaQuery.of(context).size.width - 50
-        : maxX * minWidthPerDataPoint;
+        : processedData.length * minWidthPerDataPoint;
 
-    // Construye la UI del gráfico
+    double? bottomTitlesInterval;
+    if (maxXEpoch > minXEpoch) {
+      bottomTitlesInterval = (maxXEpoch - minXEpoch) / 5.0; // Intentar tener ~5 intervalos (6 etiquetas)
+      // Prevenir intervalos extremadamente pequeños o cero.
+      if (bottomTitlesInterval < 1.0) { // Si el intervalo es menor a 1ms
+          bottomTitlesInterval = null; // Dejar que FL Chart decida.
+      }
+    } else {
+      // minXEpoch == maxXEpoch (ej. un solo punto de dato, o todos en el mismo milisegundo)
+      bottomTitlesInterval = null; 
+    }
+
+    List<HorizontalLine> extraLines = [];
+    if (thresholdHighValue != null) {
+      extraLines.add(HorizontalLine(
+        y: thresholdHighValue,
+        color: thresholdHighColor ?? Colors.black.withOpacity(0.8),
+        strokeWidth: 2,
+        dashArray: [5, 5], // Línea discontinua
+        label: HorizontalLineLabel(
+          show: true,
+          labelResolver: (_) => thresholdHighLabel ?? 'Alto',
+          alignment: Alignment.topRight,
+          padding: const EdgeInsets.only(right: 5, top: 2),
+          style: TextStyle(color: thresholdHighColor ?? Colors.black, backgroundColor: Colors.white.withOpacity(0.7), fontSize: 10, fontWeight: FontWeight.bold),
+        ),
+      ));
+    }
+    if (thresholdLowValue != null) {
+      extraLines.add(HorizontalLine(
+        y: thresholdLowValue,
+        color: thresholdLowColor ?? Colors.black.withOpacity(0.8),
+        strokeWidth: 2,
+        dashArray: [5, 5], // Línea discontinua
+        label: HorizontalLineLabel(
+          show: true,
+          labelResolver: (_) => thresholdLowLabel ?? 'Bajo',
+          alignment: Alignment.bottomRight,
+          padding: const EdgeInsets.only(right: 5, bottom: 2),
+          style: TextStyle(color: thresholdLowColor ?? Colors.black, backgroundColor: Colors.white.withOpacity(0.7), fontSize: 10, fontWeight: FontWeight.bold),
+        ),
+      ));
+    }
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start, // Alinea el título a la izquierda
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Título
         Padding(
           padding: const EdgeInsets.only(left: 8.0, bottom: 10.0),
           child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         ),
-        // Contenedor del gráfico o estado de carga/error
         SizedBox(
-          height: 200, // Altura fija para el gráfico
-          child: _isLoadingChartData // Muestra indicador si está cargando
-              ? const Center(child: CircularProgressIndicator())
-              : _errorLoadingChartData != null // Muestra error si ocurrió
-                  ? Center(child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Text(_errorLoadingChartData!, textAlign: TextAlign.center),
-                    ))
-                  : timeSeriesData.isEmpty // Muestra mensaje si no hay datos
-                      ? const Center(child: Text('No hay datos disponibles para graficar.'))
-                      // --- Widget para Scroll Horizontal ---
-                      : SingleChildScrollView(
-                          scrollDirection: Axis.horizontal, // Habilita scroll horizontal
-                          child: SizedBox( // Contenedor para darle ancho al gráfico
-                            width: chartWidth, // Ancho calculado o mínimo
-                            child: Padding( // Padding para que el gráfico no toque los bordes
-                              padding: const EdgeInsets.only(right: 16.0, left: 8.0, bottom: 10.0), // Añade padding inferior
-                              child: LineChart( // El widget del gráfico de líneas
+          height: 200, 
+          child: SingleChildScrollView( // El hijo ahora es el gráfico si los datos son válidos
+                          scrollDirection: Axis.horizontal, 
+                          child: SizedBox( 
+                            width: chartWidth, 
+                            child: Padding( 
+                              padding: const EdgeInsets.only(right: 16.0, left: 8.0, bottom: 10.0), 
+                              child: LineChart( 
                                 LineChartData(
-                                  minX: 0, // Eje X empieza en 0
-                                  maxX: maxX, // Eje X termina en el último índice
-                                  // Configuración de la apariencia
-                                  gridData: FlGridData(show: true, drawVerticalLine: false), // Rejilla horizontal
-                                  titlesData: FlTitlesData( // Ejes y títulos
+                                  minX: minXEpoch, 
+                                  maxX: maxXEpoch,
+                                  minY: minY, // Usar minY calculado
+                                  maxY: maxY, // Usar maxY calculado                                 
+                                  gridData: FlGridData(show: true, drawVerticalLine: false), 
+                                  titlesData: FlTitlesData( 
                                       show: true,
                                       rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                                       topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                      // Configuración del eje X (inferior)
                                       bottomTitles: AxisTitles(
                                         sideTitles: SideTitles(
-                                          showTitles: true, // Mostrar títulos inferiores
-                                          reservedSize: 30, // Espacio reservado
-                                          // Muestra una etiqueta cada cierto intervalo para evitar solapamiento
-                                          interval: maxX > 10 ? (maxX / 5).floorToDouble() : 1,
-                                          // Función para generar el widget de cada etiqueta del eje X
+                                          showTitles: true, 
+                                          reservedSize: 50, // Aumentado para etiquetas de múltiples líneas
+                                          interval: bottomTitlesInterval, // Usar el intervalo calculado
                                           getTitlesWidget: (value, meta) {
-                                            // Muestra el índice del punto como etiqueta
+                                            // value está en millisecondsSinceEpoch
+                                            final dt = DateTime.fromMillisecondsSinceEpoch(value.round());
+                                            String text;
+                                            if (allSameDay) {
+                                              text = DateFormat('HH:mm').format(dt);
+                                            } else {
+                                              // Formato para múltiples días: fecha arriba, hora abajo
+                                              text = DateFormat('dd/MM\nHH:mm').format(dt);
+                                            }                                            
                                             return SideTitleWidget(
                                               axisSide: meta.axisSide,
-                                              space: 4, // Espacio sobre la etiqueta
-                                              child: Text(value.toInt().toString()),
+                                              space: 4, 
+                                              child: Text(text, style: const TextStyle(fontSize: 10)),
                                             );
                                           },
                                         ),
                                       ),
-                                      // Configuración del eje Y (izquierdo)
                                       leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40))
                                   ),
-                                  borderData: FlBorderData(show: true), // Borde alrededor del gráfico
-                                  // Definición de las líneas
+                                  borderData: FlBorderData(show: true), 
                                   lineBarsData: [
-                                    // Línea 1
                                     LineChartBarData(
                                       spots: spots1, isCurved: true, color: color1, barWidth: 2,
-                                      isStrokeCapRound: true, dotData: FlDotData(show: false), belowBarData: BarAreaData(show: false),
+                                      isStrokeCapRound: true, dotData: FlDotData(show: true), belowBarData: BarAreaData(show: false),
                                     ),
-                                    // Línea 2
                                     LineChartBarData(
                                       spots: spots2, isCurved: true, color: color2, barWidth: 2,
-                                      isStrokeCapRound: true, dotData: FlDotData(show: false), belowBarData: BarAreaData(show: false),
+                                      isStrokeCapRound: true, dotData: FlDotData(show: true), belowBarData: BarAreaData(show: false),
                                     ),
                                   ],
+                                  extraLinesData: ExtraLinesData(horizontalLines: extraLines), // Movido aquí dentro de LineChartData
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      // --- Fin Scroll Horizontal ---
         ),
-        const SizedBox(height: 10), // Espacio
-        // Leyenda del gráfico
+        const SizedBox(height: 10), 
         Row(
-          mainAxisAlignment: MainAxisAlignment.center, // Centrar leyenda
+          mainAxisAlignment: MainAxisAlignment.center, 
           children: [
-            _buildLegendDot(color1, label1), // Punto y etiqueta para línea 1
-            const SizedBox(width: 16), // Espacio entre leyendas
-            _buildLegendDot(color2, label2), // Punto y etiqueta para línea 2
+            _buildLegendDot(color1, label1),
+            const SizedBox(width: 16),
+            _buildLegendDot(color2, label2),
           ],
         ),
-        const SizedBox(height: 10), // Espacio final
+        const SizedBox(height: 10),
       ],
     );
   }
 
-  // --- Construye un elemento de la leyenda (punto de color + texto) ---
   Widget _buildLegendDot(Color color, String label) {
     return Row(
-      mainAxisSize: MainAxisSize.min, // Para que ocupe el mínimo espacio horizontal
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Container( // El punto de color
+        Container(
           width: 10, height: 10,
           decoration: BoxDecoration( shape: BoxShape.circle, color: color, ),
         ),
-        const SizedBox(width: 4), // Espacio entre punto y texto
-        Text(label, style: const TextStyle(fontSize: 12)), // Texto de la etiqueta
+        const SizedBox(width: 4), 
+        Text(label, style: const TextStyle(fontSize: 12)),
       ],
     );
   }
 
-  // --- Método build principal de la pantalla ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Monitoreo de Cajones')),
-      // El cuerpo se construye dinámicamente según el estado de carga
       body: _buildBody(),
     );
   }
 
-  // --- Construye el cuerpo según el estado de carga inicial ---
   Widget _buildBody() {
     if (_isLoadingSensores) {
-      // Muestra indicador de progreso si se están cargando los sensores
       return const Center(child: CircularProgressIndicator());
     }
     if (_errorLoadingSensores != null) {
-      // Muestra error si falló la carga de sensores
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -357,7 +407,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               Text(_errorLoadingSensores!, textAlign: TextAlign.center),
               const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: _fetchUniqueSensorList, // Botón para reintentar
+                onPressed: _fetchUniqueSensorList,
                 child: const Text('Reintentar'),
               )
             ],
@@ -366,25 +416,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       );
     }
     if (_listaDeSensoresUnicos.isEmpty) {
-      // Muestra mensaje si no se encontraron sensores
       return const Center(child: Text('No se encontraron sensores.'));
     }
-    // Si todo está bien, construye el contenido principal
     return _buildMainContent();
   }
-
-
-  // --- Construye la UI principal con Mapa, Dropdown y Contenido Inferior ---
   Widget _buildMainContent() {
-    // Determina la ubicación inicial del mapa
     final LatLng initialMapLocation = _sensorSeleccionado?.ubicacion
         ?? (_listaDeSensoresUnicos.isNotEmpty
             ? _listaDeSensoresUnicos[0].ubicacion
             : const LatLng(0, 0));
 
-    return Column( // Organiza los elementos verticalmente
+    return Column( 
       children: [
-        // --- Sección del Mapa --- (Sin cambios)
         Stack(
           children: [
             SizedBox(
@@ -413,7 +456,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ],
         ),
 
-        // --- Sección del Dropdown --- (Sin cambios)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: DropdownButtonFormField<Sensor>(
@@ -440,54 +482,84 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
         ),
 
-        // --- Sección Inferior (Pestañas, Gráficos, Tabla) ---
-        Expanded( // Ocupa el espacio restante
-          child: SingleChildScrollView( // Permite scroll vertical de todo el contenido inferior
+        Expanded(
+          child: SingleChildScrollView( 
             child: Column(
               children: [
-                 // Mostrar contenido solo si hay un sensor seleccionado
+                 
                 if (_sensorSeleccionado != null) ...[
-                  const Divider(height: 1), // Línea divisoria
-                  // Título con el nombre del sensor
+                  const Divider(height: 1),
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Text(
-                      'Datos de: ${_sensorSeleccionado!.nombre}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                      textAlign: TextAlign.center,
+                    padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Datos de: ${_sensorSeleccionado!.nombre}',
+                            style: Theme.of(context).textTheme.titleMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.refresh),
+                          tooltip: 'Actualizar datos del cajón',
+                          onPressed: _isLoadingChartData
+                              ? null // Deshabilitado si está cargando
+                              : () {
+                                  // _sensorSeleccionado está garantizado que no es nulo aquí
+                                  // debido al if (_sensorSeleccionado != null) que envuelve este bloque.
+                                  // Sin embargo, una comprobación adicional no hace daño.
+                                  if (_sensorSeleccionado != null) {
+                                    _fetchChartData(_sensorSeleccionado!.nombre);
+                                  }
+                                },
+                        ),
+                      ],
                     ),
                   ),
-                  // Barra de pestañas
                   TabBar(
                     controller: _tabController,
                     tabs: const [ Tab(text: 'Temperaturas'), Tab(text: 'Humedades'), ],
                     labelColor: Theme.of(context).primaryColor,
                     unselectedLabelColor: Colors.grey,
                   ),
-                  // Contenedor para las vistas de las pestañas (Gráficos)
                   SizedBox(
-                    height: 300, // Altura fija para los gráficos
+                    height: 300, 
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: TabBarView(
                         controller: _tabController,
                         children: [
-                          // Gráfico de Temperaturas
                           SingleChildScrollView(
                             padding: const EdgeInsets.only(top: 16, bottom: 16),
                             child: _buildCombinedChart(
-                                title: 'Temperaturas (°C)', timeSeriesData: _datosDelSensorSeleccionado,
-                                label1: 'Externa', getValue1: (d) => d.temperaturaExt, color1: Colors.lightBlueAccent,
-                                label2: 'Interna', getValue2: (d) => d.temperaturaInt, color2: Colors.redAccent,
-                              ),
+                              title: 'Temperaturas (°C)',
+                              timeSeriesData: _datosDelSensorSeleccionado,
+                              label1: 'Externa', getValue1: (d) => d.temperaturaExt, color1: Colors.lightBlueAccent,
+                              label2: 'Interna', getValue2: (d) => d.temperaturaInt, color2: Colors.redAccent,
+                              // Umbrales para Temperatura
+                              thresholdHighValue: 38.0,
+                              thresholdHighColor: Colors.red[700],
+                              thresholdHighLabel: 'Máx: 38°C',
+                              thresholdLowValue: 30.0,
+                              thresholdLowColor: Colors.blue[700],
+                              thresholdLowLabel: 'Mín: 30°C',
+                            ),
                           ),
-                          // Gráfico de Humedades
                           SingleChildScrollView(
                             padding: const EdgeInsets.only(top: 16, bottom: 16),
                              child: _buildCombinedChart(
-                                title: 'Humedades (%)', timeSeriesData: _datosDelSensorSeleccionado,
-                                label1: 'Externa', getValue1: (d) => d.humedadExt, color1: Colors.cyan,
-                                label2: 'Interna', getValue2: (d) => d.humedadInt, color2: Colors.orangeAccent,
+                               title: 'Humedades (%)',
+                               timeSeriesData: _datosDelSensorSeleccionado,
+                               label1: 'Externa', getValue1: (d) => d.humedadExt, color1: Colors.cyan,
+                               label2: 'Interna', getValue2: (d) => d.humedadInt, color2: Colors.orangeAccent,
+                               // Umbrales para Humedad
+                               thresholdHighValue: 80.0,
+                               thresholdHighColor: Colors.purpleAccent[700],
+                               thresholdHighLabel: 'Máx: 80%',
+                               thresholdLowValue: 60.0,
+                               thresholdLowColor: Colors.tealAccent[700],
+                               thresholdLowLabel: 'Mín: 60%',
                              ),
                           ),
                         ],
@@ -495,37 +567,31 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ),
                   ),
 
-                  // --- INICIO: Sección de la Tabla de Datos (Modificada para Wrap) ---
-                  // Mostrar solo si no está cargando y hay datos
                   if (!_isLoadingChartData && _datosDelSensorSeleccionado.isNotEmpty) ...[
-                    const Divider(height: 20, indent: 16, endIndent: 16), // Divisor
-                    // Título de la tabla
+                    const Divider(height: 20, indent: 16, endIndent: 16), 
+                   
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                       child: Text( 'Tabla de Datos Históricos', style: Theme.of(context).textTheme.titleMedium, ),
                     ),
-                    // Contenedor con altura fija para DataTable2
+                    
                     SizedBox(
-                      height: 300, // Altura deseada para la tabla (ajustable)
+                      height: 300, 
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                        // Usar DataTable2
                         child: DataTable2(
                           columnSpacing: 12,
                           horizontalMargin: 12,
-                          // minWidth: 600, // Eliminado para permitir ajuste
-                          fixedTopRows: 1, // Fija la fila de encabezado
+                          fixedTopRows: 1,
                           headingRowColor: MaterialStateProperty.all(Colors.blueGrey[50]),
                           border: TableBorder.all(width: 1, color: Colors.grey.shade300),
-                          // Definición de Columnas (usando DataColumn2)
                           columns: const <DataColumn2>[
-                            DataColumn2(label: Text('Fecha Hora'), size: ColumnSize.L), // Más espacio para fecha
+                            DataColumn2(label: Text('Fecha Hora'), size: ColumnSize.L),
                             DataColumn2(label: Text('T. Int'), numeric: true, size: ColumnSize.S),
                             DataColumn2(label: Text('T. Ext'), numeric: true, size: ColumnSize.S),
                             DataColumn2(label: Text('H. Int'), numeric: true, size: ColumnSize.S),
                             DataColumn2(label: Text('H. Ext'), numeric: true, size: ColumnSize.S),
                           ],
-                          // Generación de Filas (usando DataRow2)
                           rows: _datosDelSensorSeleccionado
                               .map((data) {
                                 final tempIntStr = data.temperaturaInt.toStringAsFixed(1);
@@ -534,7 +600,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                 final humExtStr = data.humedadExt.toStringAsFixed(1);
                                 return DataRow2(
                                   cells: <DataCell>[
-                                    // CAMBIO: Usar Text directamente para permitir wrap
                                     DataCell(Text(data.timestamp)),
                                     DataCell(Text(tempIntStr)),
                                     DataCell(Text(tempExtStr)),
@@ -544,19 +609,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                 );
                               })
                               .toList()
-                              .reversed // Muestra los más recientes primero
+                              .reversed 
                               .toList(),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20), // Espacio al final
+                    const SizedBox(height: 20), 
                   ],
-                  // --- FIN Sección Tabla ---
 
                 ] else ...[
-                   // Mensaje si no hay sensor seleccionado
                    SizedBox(
-                     height: 300, // Espacio reservado
+                     height: 300, 
                      child: Center(
                        child: Padding(
                          padding: const EdgeInsets.all(16.0),
@@ -575,8 +638,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ],
     );
   }
-
-  // --- Navega a la pantalla del mapa expandido --- (Sin cambios)
   void _goToExpandedMap() {
     final LatLng centerLocation = _sensorSeleccionado?.ubicacion
         ?? (_listaDeSensoresUnicos.isNotEmpty
