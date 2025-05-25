@@ -17,7 +17,7 @@ Adafruit_SHT4x sht4 = Adafruit_SHT4x();
  
 float h ;
 float t;
-String sensor_id = "Sensor1" ;
+String sensor_id = "Colmena1" ;
 sensors_event_t humidityInt, tempInt;
 String fecha; 
 unsigned long lastMillis = 0;
