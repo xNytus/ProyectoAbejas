@@ -1,44 +1,37 @@
-// sensor.dart (CONTENIDO COMPLETO Y CORREGIDO)
 import 'package:flutter/material.dart';
-// --- ¡ASEGÚRATE DE QUE ESTA LÍNEA SEA LA CORRECTA! ---
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-// --- FIN DE LA LÍNEA IMPORTANTE ---
 
 class Sensor {
-  final String nombre; // Corresponds to sensorId
-  final LatLng ubicacion; // Ahora LatLng debería ser reconocido
+  final String nombre;
+  final LatLng ubicacion;
   final Color color;
 
   Sensor({
     required this.nombre,
     required this.ubicacion,
-  }) : color = _generateColorFromName(nombre); // Genera color en initializer list
+    required this.color,
+  });
 
-  // Factory constructor para parsear JSON para identidad (si lo necesitas)
-  factory Sensor.fromJsonIdentificador(Map<String, dynamic> json) {
+  /// Crea una instancia de Sensor desde un mapa JSON.
+  /// Asume que la API devuelve 'id', 'latitud', y 'longitud'.
+  factory Sensor.fromJson(Map<String, dynamic> json) {
     return Sensor(
-      nombre: json['sensorId'] ?? 'ID Desconocido',
-      ubicacion: LatLng( // LatLng usado aquí
+      // Usa 'id' o 'sensorId' según lo que devuelva tu API para la lista de sensores.
+      nombre: json['id'] as String,
+      ubicacion: LatLng(
+        // Se añade `?` para manejar nulos y `??` para dar un valor por defecto.
         (json['lat'] as num?)?.toDouble() ?? 0.0,
         (json['lng'] as num?)?.toDouble() ?? 0.0,
       ),
+      // Puedes asignar un color por defecto o basarlo en alguna lógica.
+      color: Colors.blueGrey,
     );
   }
 
-  // Función estática para generar color
-  static Color _generateColorFromName(String name) {
-    final hash = name.hashCode;
-    if (Colors.primaries.isEmpty) return Colors.grey; // Prevención
-    return Colors.primaries[hash % Colors.primaries.length];
-  }
-
-  // Override equality and hashCode para Sets/Maps
+  // Es una buena práctica sobreescribir '==' y 'hashCode' para comparar objetos.
+  // Esto es especialmente útil para el DropdownButton y para la lógica de selección.
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is Sensor &&
-          runtimeType == other.runtimeType &&
-          nombre == other.nombre;
+  bool operator ==(Object other) => identical(this, other) || other is Sensor && runtimeType == other.runtimeType && nombre == other.nombre;
 
   @override
   int get hashCode => nombre.hashCode;

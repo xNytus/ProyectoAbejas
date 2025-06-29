@@ -5,11 +5,10 @@ class MapaExpandidoScreen extends StatelessWidget {
   final LatLng ubicacionInicial;
   final Set<Marker> marcadores;
 
-  const MapaExpandidoScreen({
-    Key? key,
+  const MapaExpandidoScreen({super.key,
     required this.ubicacionInicial,
     required this.marcadores,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
